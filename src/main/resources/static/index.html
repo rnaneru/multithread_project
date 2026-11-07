@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vacancy Parser — hh.ru</title>
+    <style>
+        :root {
+            --bg: #f4f6fb;
+            --card: #ffffff;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --accent: #d6001c;
+            --accent-dark: #a80016;
+            --border: #e5e7eb;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        header {
+            background: linear-gradient(135deg, #1f2937, #374151);
+            color: #fff;
+            padding: 24px 32px;
+        }
+
+        header h1 { margin: 0 0 6px; font-size: 24px; }
+        header p { margin: 0; opacity: .8; font-size: 14px; }
+
+        main {
+            max-width: 1100px;
+            margin: 24px auto 64px;
+            padding: 0 20px;
+            display: grid;
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
+        }
+
+        .card h2 { margin: 0 0 16px; font-size: 18px; }
+
+        form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 12px;
+            align-items: end;
+        }
+
+        label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+
+        input, select {
+            padding: 9px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text);
+            background: #fff;
+        }
+
+        input:focus, select:focus { outline: 2px solid rgba(214, 0, 28, .25); border-color: var(--accent); }
+
+        button {
+            padding: 10px 16px;
+            border: 0;
+            border-radius: 8px;
+            background: var(--accent);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background .15s;
+        }
+
+        button:hover { background: var(--accent-dark); }
+        button.secondary { background: #374151; }
+        button.secondary:hover { background: #1f2937; }
+        button:disabled { opacity: .6; cursor: wait; }
+
+        .status {
+            margin-top: 16px;
+            padding: 12px 14px;
+            border-radius: 8px;
+            background: #f9fafb;
+            border: 1px solid var(--border);
+            font-size: 13px;
+            white-space: pre-wrap;
+            font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .stat {
+            background: #f9fafb;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px 14px;
+        }
+
+        .stat .value { font-size: 22px; font-weight: 700; }
+        .stat .label { font-size: 12px; color: var(--muted); }
+
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+        tr:hover td { background: #fafafa; }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .muted { color: var(--muted); font-size: 12px; }
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #eef2ff;
+            color: #3730a3;
+            font-size: 12px;
+            margin: 0 4px 4px 0;
+        }
+
+        .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+
+        @media (max-width: 640px) {
+            table { font-size: 12px; }
+            th:nth-child(4), td:nth-child(4) { display: none; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Vacancy Parser — hh.ru</h1>
+    <p>Многопоточный сбор вакансий: RSS + детальные страницы, H2, Spring Boot</p>
+</header>
+
+<main>
+    <section class="card">
+        <h2>Запуск парсинга</h2>
+        <form id="parse-form">
+            <label>Поисковый запрос
+                <input id="query" value="Java" required maxlength="100">
+            </label>
+            <label>Регион (area)
+                <input id="area" type="number" value="1" min="1">
+            </label>
+            <label>Страниц RSS
+                <input id="pages" type="number" value="1" min="1" max="10">
+            </label>
+            <label>Детальные страницы
+                <select id="enrich">
+                    <option value="true" selected>Загружать требования</option>
+                    <option value="false">Только RSS (быстро)</option>
+                </select>
+            </label>
+            <button id="btn-async" type="submit">Запустить</button>
+            <button id="btn-sync" type="button" class="secondary">Запустить и дождаться</button>
+        </form>
+        <div class="status" id="status">Готово к запуску.</div>
+    </section>
+
+    <section class="card">
+        <h2>Сводка</h2>
+        <div class="stats" id="summary">
+            <div class="stat"><div class="value" id="stat-total">—</div><div class="label">вакансий в H2</div></div>
+            <div class="stat"><div class="value" id="stat-cities">—</div><div class="label">городов</div></div>
+            <div class="stat"><div class="value" id="stat-salary">—</div><div class="label">средняя зарплата</div></div>
+            <div class="stat"><div class="value" id="stat-skills">—</div><div class="label">уникальных навыков</div></div>
+        </div>
+        <div class="toolbar">
+            <button type="button" onclick="loadAnswer(0)">Показать результаты</button>
+            <button type="button" class="secondary" onclick="loadStats()">Обновить сводку</button>
+            <button type="button" class="secondary" onclick="loadJobs()">Статус задач</button>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2>Результаты <span class="muted" id="page-info"></span></h2>
+        <div id="results"><p class="muted">Нажмите «Показать результаты».</p></div>
+        <div class="toolbar">
+            <button type="button" class="secondary" onclick="changePage(-1)">← Назад</button>
+            <button type="button" class="secondary" onclick="changePage(1)">Вперёд →</button>
+        </div>
+    </section>
+</main>
+
+<script>
+    const state = { page: 0, size: 20, totalPages: 1 };
+
+    const statusEl = document.getElementById('status');
+    const resultsEl = document.getElementById('results');
+    const pageInfoEl = document.getElementById('page-info');
+
+    function setStatus(text) {
+        statusEl.textContent = text;
+    }
+
+    function formatSalary(v) {
+        if (v.salaryRaw) return v.salaryRaw;
+        if (v.salaryFrom && v.salaryTo) return `${v.salaryFrom} – ${v.salaryTo} ${v.salaryCurrency || ''}`;
+        if (v.salaryFrom) return `от ${v.salaryFrom} ${v.salaryCurrency || ''}`;
+        if (v.salaryTo) return `до ${v.salaryTo} ${v.salaryCurrency || ''}`;
+        return 'не указана';
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;');
+    }
+
+    async function loadAnswer(page) {
+        state.page = Math.max(0, page);
+        const response = await fetch(`/answer?page=${state.page}&size=${state.size}&sort=publishedAt&direction=desc`);
+        if (!response.ok) {
+            resultsEl.innerHTML = `<p class="muted">Ошибка: ${response.status}</p>`;
+            return;
+        }
+        const data = await response.json();
+        state.totalPages = Math.max(1, data.totalPages);
+        pageInfoEl.textContent = `— страница ${data.page + 1} из ${data.totalPages}, всего ${data.totalElements}`;
+
+        if (!data.content.length) {
+            resultsEl.innerHTML = '<p class="muted">Данных пока нет. Дождитесь завершения парсинга.</p>';
+            return;
+        }
+
+        const rows = data.content.map(v => `
+            <tr>
+                <td>
+                    <a href="${escapeHtml(v.url)}" target="_blank" rel="noopener">${escapeHtml(v.title)}</a>
+                    <div class="muted">${escapeHtml(v.company || '—')}</div>
+                </td>
+                <td>${escapeHtml(v.city || '—')}</td>
+                <td>${escapeHtml(formatSalary(v))}</td>
+                <td>
+                    ${(v.keySkills || '').split(',').filter(Boolean).slice(0, 5)
+                        .map(s => `<span class="tag">${escapeHtml(s.trim())}</span>`).join('') || '<span class="muted">—</span>'}
+                </td>
+                <td class="muted">${v.publishedAt ? new Date(v.publishedAt).toLocaleDateString('ru-RU') : '—'}</td>
+            </tr>
+        `).join('');
+
+        resultsEl.innerHTML = `
+            <table>
+                <thead>
+                <tr><th>Вакансия</th><th>Город</th><th>Зарплата</th><th>Навыки</th><th>Дата</th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }
+
+    function changePage(delta) {
+        loadAnswer(Math.min(Math.max(0, state.page + delta), state.totalPages - 1));
+    }
+
+    async function loadStats() {
+        const response = await fetch('/api/stats');
+        if (!response.ok) return;
+        const stats = await response.json();
+        document.getElementById('stat-total').textContent = stats.totalVacancies;
+        document.getElementById('stat-cities').textContent = Object.keys(stats.byCity || {}).length;
+        document.getElementById('stat-salary').textContent =
+            stats.salary && stats.salary.average ? Math.round(stats.salary.average).toLocaleString('ru-RU') + ' ₽' : '—';
+        document.getElementById('stat-skills').textContent = (stats.topSkills || []).length;
+    }
+
+    async function loadJobs() {
+        const response = await fetch('/api/parse/jobs');
+        if (!response.ok) return;
+        const jobs = await response.json();
+        if (!jobs.length) {
+            setStatus('Задач пока нет.');
+            return;
+        }
+        setStatus(jobs.slice(0, 5).map(job =>
+            `${job.status.padEnd(9)} ${job.jobId.slice(0, 8)}  query='${job.query}'  ` +
+            `RSS=${job.rssItems}  деталей=${job.detailsFetched}/${job.detailsFailed}  ` +
+            `новых=${job.created}  обновлено=${job.updated}  ${job.durationMs} мс` +
+            (job.error ? `\n  ошибка: ${job.error}` : '') +
+            (job.warnings && job.warnings.length ? `\n  предупреждения: ${job.warnings.join(' | ')}` : '')
+        ).join('\n\n'));
+    }
+
+    document.getElementById('parse-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        const params = new URLSearchParams({
+            query: document.getElementById('query').value,
+            area: document.getElementById('area').value,
+            pages: document.getElementById('pages').value,
+            enrichDetails: document.getElementById('enrich').value
+        });
+        setStatus('Запускаем парсинг...');
+        const response = await fetch(`/api/parse/run?${params}`, { method: 'POST' });
+        if (!response.ok) {
+            setStatus(`Ошибка запуска: ${response.status}`);
+            return;
+        }
+        const job = await response.json();
+        setStatus(`Задача ${job.jobId} запущена.\nСтатус: ${job.status}`);
+        pollJob(job.jobId);
+    });
+
+    document.getElementById('btn-sync').addEventListener('click', async () => {
+        const params = new URLSearchParams({
+            query: document.getElementById('query').value,
+            area: document.getElementById('area').value,
+            pages: document.getElementById('pages').value,
+            enrichDetails: document.getElementById('enrich').value
+        });
+        setStatus('Парсинг выполняется, это может занять до минуты...');
+        const response = await fetch(`/api/parse/run-sync?${params}`, { method: 'POST' });
+        if (!response.ok) {
+            setStatus(`Ошибка: ${response.status}`);
+            return;
+        }
+        const job = await response.json();
+        setStatus(`Статус: ${job.status}\nRSS-вакансий: ${job.rssItems}\nДеталей: ${job.detailsFetched}\n` +
+            `Новых: ${job.created}, обновлено: ${job.updated}\nВремя: ${job.durationMs} мс` +
+            (job.error ? `\nОшибка: ${job.error}` : ''));
+        await loadStats();
+        await loadAnswer(0);
+    });
+
+    async function pollJob(jobId) {
+        for (let attempt = 0; attempt < 120; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const response = await fetch(`/api/parse/jobs/${jobId}`);
+            if (!response.ok) continue;
+            const job = await response.json();
+            setStatus(`Задача ${job.jobId}\nСтатус: ${job.status}\nRSS-вакансий: ${job.rssItems}\n` +
+                `Деталей: ${job.detailsFetched} (ошибок ${job.detailsFailed})\n` +
+                `Новых: ${job.created}, обновлено: ${job.updated}\nВремя: ${job.durationMs} мс` +
+                (job.error ? `\nОшибка: ${job.error}` : ''));
+            if (job.status === 'COMPLETED' || job.status === 'FAILED') {
+                await loadStats();
+                await loadAnswer(0);
+                return;
+            }
+        }
+    }
+
+    loadStats();
+    loadJobs();
+</script>
+</body>
+</html>
